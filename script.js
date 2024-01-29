@@ -1,495 +1,658 @@
-const Player = (humanOrBot, number) => {
-    const isHuman = humanOrBot;
-    const playerNumber = number;
-    const symbol = (playerNumber == 1? 'X' : 'O');
-    const isTurn = false;
-    // functions
-    function toggleTurn() {
-        isTurn = isTurn? false: true;
-    }
-    return {playerNumber, isHuman, symbol, isTurn}
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-const Bot = (humanOrBot, number) => {
-    const isHuman = humanOrBot;
-    const playerNumber = number;
-    const symbol = (playerNumber == 1? 'X' : 'O');
-    const difficulty = 0;
+async function waitForTime(time, func, ...args) {
+    await sleep(time);
+    func(...args)
+}
 
-    // function for easy mode: random open spot
-    function getMove(botDifficulty, board) {
-        let spaces = Board.boardArray.multiIndexOf('');
-        let move = null;
-        if(botDifficulty == 0){
-            move = spaces[Math.floor(Math.random()*spaces.length)];
-            console.log(move)
+class GameBoard {
+  constructor(
+      rows = 3,
+      columns = 3,
+  ) {
+      this.boardArray = new Array(rows*columns)
+  }
+
+  initializeBoard() {
+    for (let i = 0; i < this.boardArray.length; i++) {
+        this.boardArray[i] = Cell();
+        this.boardArray[i].addIndex(i);
+      }
+      return this.boardArray
+  };
+
+  getBoard() {
+    return this.boardArray;
+  };
+
+  placeMove(space, player ){
+    const spaceVal = this.boardArray[space].getValue()
+
+    if (spaceVal === null){
+      this.boardArray[space].addToken(player);
+    }
+    else{this.boardArray[space].addToken(spaceVal)}
+  }
+
+  printBoard() {
+    const boardWithCellValues = this.boardArray.map((cell) => cell.getValue())
+    return boardWithCellValues;
+  }
+}
+
+
+function Cell() {
+  let value = null;
+  let cellIndex = null;
+
+  // add cell index
+  const addIndex = (i) => {
+    cellIndex = i
+  }
+  // Get cell index
+  const getIndex = () => cellIndex;
+
+  // Accept a player's token to change the value of the cell
+  const addToken = (player) => {
+    value = player;
+  };
+
+  const clearValue = () => {
+    value = null;
+  }
+
+  // How we will retrieve the current value of this cell through closure
+  const getValue = () => value;
+
+  return {
+    addIndex,
+    getIndex,
+    addToken,
+    getValue,
+    clearValue
+  };
+}
+
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+class GameController {
+  constructor(
+    playerHuman,
+    winCount
+  ) {
+    // Initialize Players
+    this.playerOneHuman = playerHuman === '1' ? true : false
+    this.playerTwoHuman = this.playerOneHuman ? false : true
+
+    this.player1 = new Player('X', this.playerOneHuman)
+    this.player2 = new Player('O', this.playerTwoHuman)
+    this.players = [this.player1, this.player2]
+
+    // Get new board
+    this.board = new GameBoard();
+    this.board.initializeBoard();
+
+    // Setup first Round
+    this.activePlayer = this.players[0];
+    this.printNewRound();
+
+    // get win rate
+    this.winCount = winCount/10;
+  }
+
+  switchPlayerTurn = async () => {
+    this.activePlayer = this.activePlayer === this.players[0] ? this.players[1] : this.players[0];
+  }
+
+  getActivePlayer() {
+    return this.activePlayer;
+  }
+
+  printNewRound() {
+    this.board.printBoard();
+  }
+
+  checkAvailableMoves() {
+      const availableMoves = this.board.getBoard().map((cell) => cell.getValue()).filter((val) => val == null);
+      if(availableMoves.length != 0){return true}
+      else return false
+  }
+
+  checkWinCondition(b) {
+      let val = this.getActivePlayer().getToken()
+      const boardWithCellValues = b.map(function (cell) {
+          if (cell.getValue() === val) {
+            return cell.getIndex();
+          }
+      }).filter((i) => i !== null);
+
+    const across1 = [0, 1, 2];
+    const across2 = [3, 4, 5];
+    const across3 = [6, 7, 8];
+    const down1 = [0, 3, 6];
+    const down2 = [1, 4, 7];
+    const down3 = [2, 5, 8];
+    const diagnal1 = [0, 4, 8];
+    const diagnal2 = [2, 4, 6];
+    const permutations = [across1, across2, across3, down1, down2, down3, diagnal1, diagnal2];
+
+    for (let i = 0; i < permutations.length; i++) {
+      const result = permutations[i].every((j) => boardWithCellValues.includes(j));
+      if (result) {
+        if(this.getActivePlayer().getHuman()) return 1
+        else return -2
+      }
+    }
+    if(!this.checkAvailableMoves()) return -1
+    else return 0;
+  }
+
+  playRound = async(space) => {
+    // get active player
+    const token = this.getActivePlayer().getToken();
+    let human = this.getActivePlayer().getHuman()
+
+    if(!human){
+      this.moveBot()
+    }
+    else if(human){
+      this.movePlayer(space)
+    }
+  }
+
+  moveBot = async() => {
+    let currentBoard = this.board.printBoard()
+    let currentToken = this.getActivePlayer().getToken()
+    let currentHuman = this.getActivePlayer().getHuman()
+    let otherToken = currentToken == 'O' ? 'X': 'O'
+
+    // await waitForTime(500, console.log, 'wait for bot')
+    if(!currentHuman){
+      let botMove = this.getActivePlayer().getBotMove(currentBoard, currentToken, otherToken, currentHuman, this.winCount)
+      this.board.placeMove(botMove, currentToken);
+      let updatedBoard = this.board.getBoard();
+
+      if(this.checkWinCondition(updatedBoard) != 0) return 1
+      else {
+        this.switchPlayerTurn();
+        this.printNewRound();
+      }
+    }
+  }
+
+  movePlayer(space) {
+    if(this.board.printBoard()[space] === null){
+      this.board.placeMove(space, this.getActivePlayer().getToken());
+
+      if(this.checkWinCondition(this.board.getBoard()) != 0) return 1
+      else {
+        // this.printNewRound();
+        this.switchPlayerTurn();
+        this.moveBot()
+      }
+
+    }
+  }
+
+  clearBoard() {
+    this.board = new GameBoard()
+    this.board.initializeBoard()
+    }
+  }
+  
+class Player {
+  constructor(
+    token,
+    human
+  ) {
+      this.playerToken = token
+      this.human = human;
+  }
+
+  getToken(){return this.playerToken}
+  getHuman(){return this.human}
+
+   //bot moves
+  findWin(board, player){
+    if (
+    (board[0] == player && board[1] == player && board[2] == player) ||
+    (board[3] == player && board[4] == player && board[5] == player) ||
+    (board[6] == player && board[7] == player && board[8] == player) ||
+    (board[0] == player && board[3] == player && board[6] == player) ||
+    (board[1] == player && board[4] == player && board[7] == player) ||
+    (board[2] == player && board[5] == player && board[8] == player) ||
+    (board[0] == player && board[4] == player && board[8] == player) ||
+    (board[2] == player && board[4] == player && board[6] == player)
+    ) return true;
+    else return false;
+  }
+
+  makeEasyBotMove(board) {
+    //randomly pick an available space
+    const available = board
+
+    //get indices of available
+    let indices = []
+    let idx = available.indexOf(null);
+    while (idx !== -1) {
+      indices.push(idx);
+      idx = available.indexOf(null, idx + 1);
+    }
+
+    let move = indices[(Math.floor(Math.random() * indices.length))]
+    return move
+  }  
+
+  minimax(board, botToken, humanToken, isHuman){
+
+    // copy board
+    let newBoard = []
+    for(let i = 0; i< 9; i++){
+      newBoard.push(board[i])
+    }
+
+    // get available
+    let available = newBoard.reduce((acc, curr, index) => {
+      if (curr === null) {
+        acc.push(index);
+      }
+      return acc;
+    }, []);
+
+
+    // scores for terminal states
+    if(this.findWin(newBoard, humanToken)) return {score:-10}
+    else if (this.findWin(newBoard, botToken)) return {score:10}
+    else if(available.length === 0) return {score:0};
+
+    // moves
+    let moves = [];
+
+    // loop available
+    for (let i = 0; i < available.length; i++){
+      let move  = {};
+        move['index'] = available[i];
+
+      // set empty spot to player
+      if(isHuman){newBoard[available[i]] = humanToken}
+      else{newBoard[available[i]] = botToken}
+
+      // get score
+      if (isHuman){
+        let result = this.minimax(newBoard, botToken, humanToken, false)
+        move['score'] = result.score;
+      }
+      else {
+        let result = this.minimax(newBoard, botToken, humanToken, true);
+        move['score'] = result.score;
+      }
+
+      //reset spot to empty
+      newBoard[available[i]] = null;
+
+      //push to array
+      moves.push(move)  
+    }
+
+    // choose best move
+    let bestMove;
+    if(!isHuman){
+      let bestScore = -10000;
+      for(let i = 0; i < moves.length; i++){
+        if(moves[i].score > bestScore){
+          bestScore = moves[i].score;
+          bestMove = i;
         }
-
-        return move
+      }
     }
+    else {
+      let bestScore = 10000;
+      for(let i = 0; i < moves.length; i++){
+        if(moves[i].score < bestScore){
+          bestScore = moves[i].score;
+          bestMove = i;
+        }
+      }
+    }
+    let best = moves[bestMove]
+    return best
+  }
 
-    return {playerNumber, isHuman, symbol,
-    getMove: getMove}
+  makeAIBotMove(board, botToken, humanToken, bot, diff) {
+    let chance = Math.random()
+
+    if(diff < chance){return this.makeEasyBotMove(board)}
+    else{return this.minimax(board, botToken, humanToken, bot).index}
+  }
+
+  getBotMove(board, botToken, humanToken, bot, diff){
+    let move = this.makeAIBotMove(board, botToken, humanToken, bot, diff)
+    return move
+  }
+
 }
 
-const PlayerSelection = (() => {
+function ScreenController() {
+  const playerTurnDiv = document.querySelector('.turn');
+  const boardDiv = document.querySelector('.board');
+  const restartDiv = document.querySelector('.restart');
+  const winDiv = document.querySelector('.wins')
 
-    // --- GET MODULE DOM COMPONENTS
-    let _playerSelection = document.querySelector('#player-selection');
-    let _playerCard = Array.from(document.querySelectorAll('.card-container'));
-    let _selection_butts = document.querySelectorAll('.player-button');
-    let _startButt = document.querySelector('#start-butt');
-    let _ready = Array.from(document.querySelectorAll('.ready'));
-
-    // other local vars
-    let player1 = null;
-    let player2 = null;
-
-    // --- GIVE FUNCTIONALITY ---
-
-    // Player selection buttons
-    for (let i=0; i < _selection_butts.length; i++) {
-        _selection_butts[i].addEventListener('click', (e) => {
-            console.log(i)
-            getPlayerInfo(e.target.classList[0], i);
-            _toggleStartButton(player1, player2);
-        });
+  let playerHuman = 1;
+  let game = new GameController();
+  let winCount = 0
+  let newWinCount = winCount
+  
+  function typeText(target, text) {
+    speed = 25
+    i = 0;
+    if (i < text.length) {
+      let t = text.charAt(i)
+      target.innerHTML += text.charAt(i);
+      i++;
+      waitForTime(speed, typeText, target, text.substring(i))
     }
-
-    // Start game button
-        _startButt.addEventListener('click', (e) => {
-            console.log(player1)
-            console.log(player2)
-            _hidePlayerSelection();
-            window.setTimeout(() => Board.initializeBoard(), 500);
-            Board.startGame(player1, player2);
-        });
-
-        
-    // --- FUNCTIONS ---
-
-    // reset player selection
-    function resetSelection() {
-        player1 = null;
-        player2 = null;
-        _ready.forEach(div => div.textContent = '');
-        _startButt.style.display = 'none';
-        return {player1: player1,
-                player2: player2}
-    }
-
-    // for button press, get player role (human or bot) and number
-    function getPlayerInfo(playerRole, index) {
-        let isHuman = playerRole == 'human'? true: false;
-        let number = index < 2? 1: 2;
-
-        _ready[number-1].textContent = `'Player ${number} ${isHuman}'`
-        return number == 1 ? player1 = [isHuman, number] : player2 = [isHuman, number];
-    }
-
-    //initialize start button
-    function _toggleStartButton(player1, player2) {
-        if (player1 != null && player2 != null) {_startButt.style.display = 'block'}
-        else {_startButt.style.display = 'none'};
-    }
-
-    // show player selection
-    function showPlayerSelection() {
-        _playerSelection.style.animationDelay = '1s';
-        _playerSelection.style.animation = 'fadeIn 1s forwards';
-        _playerSelection.style.zIndex = 999;
-        resetSelection();
-    }
+  }
+  
+  // info button
+  function clickToggleInfo(e){
+    const target = e.target;
+    const infoWindow = document.createElement('div');
+    const closeButton = document.createElement('button')
+    const infoText = document.createElement('p');
+    const body = document.querySelector('body')
+    text = "10 hackers are trying to hack into your computer for your personal information! Luckily, you've set up your machine's defenses to block them out by beating them at a game of tic-tac-toe. Can you defeat all 10 hackers? Every opponent will get increasingly difficult as you defeat more of them."
+    typeText(infoText, text)
     
-    // initialize game board
-    function _hidePlayerSelection() {
-        _playerSelection.style.animation = 'fadeOut 1s forwards';
-        _playerSelection.style.zIndex = 0;
+    closeButton.addEventListener('click', clickCloseInfo)
+    closeButton.innerHTML = 'X'
+    infoWindow.appendChild(closeButton)
+    infoWindow.appendChild(infoText)
+    infoWindow.className = 'info-window'
+    info.disabled=true;
+    body.appendChild(infoWindow)
+  }
+
+  function clickCloseInfo(e) {
+    const target = e.target
+    const infowin = document.querySelector('.info-window')
+    const body = document.querySelector('body')
+    // body = body.removeChild(info)
+    infowin.remove()
+    info.disabled = false;
+  }
+
+  const info = document.querySelector('.info');
+  info.addEventListener('click', clickToggleInfo)
+
+  // get human or bot
+  function clickPlayerButtonValue(e){
+    const target = e.target;
+    if(target.className.includes('1')){playerHuman = target.value}
+    else if(target.className.includes('2')){playerHuman = target.value}
+    console.log(`playerHuman: ${playerHuman}`);
+  }
+  const startGame = (winCount) => { 
+    game = new GameController(playerHuman = playerHuman, winCount = winCount);
+    console.log(`Player 1: ${game.players[0].getToken()}, Human: ${game.players[0].getHuman()}`)
+    console.log(`Player 2: ${game.players[1].getToken()}, Human: ${game.players[1].getHuman()}`)
+    
+    updateScreen();
+  }
+
+  // toggle board fade in and out
+  function fadeIn(id) {
+    const target = document.getElementById(id)
+    target.style.animation = 'fadeIn 0.5s forwards';
+    // if(target.className === 'fadeout') {
+    target.className ='fadein'
+      // target.classList.toggle('fadeout')
+    target.style.zIndex = 999;
+  }
+
+  function fadeOut(id) {
+    const target = document.getElementById(id)
+    target.style.animation = 'fadeOut 0.5s';
+    // target.classList.toggle('fadeout')
+    // if(target.className === 'fadeout') {
+    target.className ='fadeout'
+    // target.classList.toggle('fadein')
+    target.style.zIndex = 0; 
+  }
+
+  function clickStartGame(e) {
+    const target = e.target;
+    const container = document.getElementsByClassName('.container')
+    const mainMenu = document.getElementById('mainmenu')
+    
+    const runStartGame = async () => {
+      fadeOut('mainmenu')
+      waitForTime(1000, console.log, 'wait')
+      // mainMenu.style.display = 'none';
+      waitForTime(1000, fadeIn, 'game-container')
+      startGame(winCount)
+    }
+    runStartGame()
+  }
+
+  const renderStart = () => {
+    const startButton = document.querySelector('.start');
+    const player1 = document.querySelector('#player1')
+    const player2 = document.querySelector('#player2')
+    const selectionButts = player1.getElementsByTagName('button');
+    const selectionButts2 = player2.getElementsByTagName('button');
+    const gameContainer = document.querySelector('#game-container')
+    const container = document.querySelector('.container')
+    
+    container.style.display = 'flex'
+    winCount = 0
+    newWinCount = 0
+
+    if(gameContainer.className === 'fadein') {
+      fadeOut('game-container')
+      restartDiv.querySelectorAll('*').forEach(n => n.remove());
+      waitForTime(1000, fadeIn, 'mainmenu')
+      restartDiv.querySelectorAll('*').forEach(n => n.remove());
+    }
+    else fadeIn('mainmenu')
+
+    for(const btn of selectionButts){
+      btn.addEventListener('click', clickPlayerButtonValue)
     }
 
-    return {
-        getPlayerInfo: getPlayerInfo,
-        showPlayerSelection: showPlayerSelection,
-        resetSelection: resetSelection,
-        player1Info: player1,
-        player2Info: player2
-        
+    for(const btn of selectionButts2){
+      btn.addEventListener('click', clickPlayerButtonValue)
     }
-})();
+    startButton.addEventListener('click', clickStartGame);
+  }
 
-var Board = (() => {
+  // render newgame button
+  const renderNewGame = (newWinCount) => {
+    const activePlayer = game.getActivePlayer();
+ 
+    const newButton = document.createElement("button");
+    const mainMenuButton = document.createElement("button");
 
-    // --- INITIALIZE MODULE DOM COMPONENTS
-    let _board = document.querySelector('#board');
-    let _space = Array.from(document.getElementsByClassName('board-square'));
-    let _scores = document.querySelector('#score');
+    playerTurnDiv.textContent = `${activePlayer.getToken()} Wins!`
+    if(newWinCount === winCount){
+      btnText = 'Restart'
+      playerTurnDiv.textContent = `It's a draw!`
+    }
+    else if(newWinCount > winCount){
+      btnText = 'Next Round'
+      winCount = newWinCount;
+      playerTurnDiv.textContent = `${activePlayer.getToken()} Wins!`
+    }
+    else{
+      btnText = 'New Game'
+      winCount = 0
+      newWinCount = 0
+      playerTurnDiv.textContent = `${activePlayer.getToken()} Wins!`
+    }
+    newButton.innerHTML = btnText;
+    newButton.addEventListener('click', clickNewGame);
+    mainMenuButton.innerHTML = 'Main Menu';
+    mainMenuButton.addEventListener('click', renderStart)
+    restartDiv.appendChild(mainMenuButton);
+    restartDiv.appendChild(newButton);
+  }
 
-    // get local vars
-    let Player1 = null;
-    let Player2 = null;
-    let boardArray = [
-        0, 0, 0,
-        0, 0, 0,
-        0, 0, 0,
+  const updateScreen = (end) => {
+    // clear the board
+    boardDiv.textContent = "";
+
+    // get the newest version of the board and player turn
+    const board = game.board.getBoard();
+    const activePlayer = game.getActivePlayer();
+
+    // Display player's turn
+    playerTurnDiv.textContent = `${activePlayer.getToken()}'s turn`
+    winDiv.textContent = `Win Count: ${winCount}`
+
+    // Render board squares
+    board.forEach((cell, index) => {
+        // Anything clickable should be a button
+        const cellButton = document.createElement("button");
+        cellButton.classList.add("cell");
+        // Create a data attribute to identify the column
+        // This makes it easier to pass into our `playRound` function 
+        cellButton.dataset.cell = index
+        cellButton.textContent = cell.getValue();
+        if(!end){
+          if(cellButton.innerHTML === ''){
+            cellButton.addEventListener('click', clickHandlerBoard)
+          }
+          
+        }
+        boardDiv.appendChild(cellButton);
+      })
+  }
+
+  // Add event listener for the board
+  function clickHandlerBoard(e) {
+    const selectedButton = e.target;
+  
+    if (!selectedButton) return;
+    
+    game.playRound(selectedButton.dataset.cell);
+    updateScreen(false)
+    console.log(game.board.printBoard())
+    let result = game.checkWinCondition(game.board.getBoard());
+    console.log(result)
+    console.log(game.activePlayer)
+    if(result == 1){
+      newWinCount += 1
+      console.log('win')
+      updateScreen(true)
+      renderNewGame(newWinCount)
+    }
+    else if(result == -2){
+      newWinCount = 0
+      console.log('win bot')
+      updateScreen(true)
+      renderNewGame(newWinCount)
+    }
+    else if(result==-1){
+      console.log('draw')
+      updateScreen(true)
+      renderNewGame(newWinCount)
+    }
+    else {
+      updateScreen(false);
+    }
+  }
+
+  function clickNewGame(e){
+      const button = e.target;
+      restartDiv.querySelectorAll('*').forEach(n => n.remove());
+      startGame(winCount)
+  }
+
+  // start animation
+  const loadStart = () => {
+    var intervalID = window.setInterval(updateScreen, 200);
+    var console = document.getElementById("console");
+    const msg = document.querySelector(".msg");
+
+    var txt = [
+      "FORCE: XX0022. ENCYPT://000.222.2345",
+      "TRYPASS: ********* AUTH CODE: ALPHA GAMMA: 1___ PRIORITY 1",
+      "RETRY: REINDEER FLOTILLA",
+      "Z:> /FALKEN/GAMES/TICTACTOE/ EXECUTE -PLAYERS 0",
+      "================================================",
+      "Priority 1 // local / scanning...",
+      "scanning ports...",
+      "BACKDOOR FOUND (23.45.23.12.00000000)",
+      "BACKDOOR FOUND (13.66.23.12.00110000)",
+      "BACKDOOR FOUND (13.66.23.12.00110044)",
+      "...",
+      "...",
+      "BRUTE.EXE -r -z",
+      "...locating vulnerabilities...",
+      "...vulnerabilities found...",
+      "MCP/> DEPLOY CLU",
+      "SCAN: __ 0100.0000.0554.0080",
+      "SCAN: __ 0020.0000.0553.0080",
+      "SCAN: __ 0001.0000.0554.0550",
+      "SCAN: __ 0012.0000.0553.0030",
+      "SCAN: __ 0100.0000.0554.0080",
+      "SCAN: __ 0020.0000.0553.0080"
     ];
-    Array.prototype.multiIndexOf = function (el) { 
-        var idxs = [];
-        for (var i = this.length - 1; i >= 0; i--) {
-            if (this[i] === el) {
-                idxs.unshift(i);
-            }
-        }
-        return idxs;
-    };
 
-    const getSpace = (i) => _board[i];
-    var moveCount = 1;
-    let outcome = null;
+    var docfrag = document.createDocumentFragment();
 
-    // initialize board
-    function initializeBoard() {
-        _board.style.animationDelay = '1s';
-        _board.style.animation = 'fadeIn 1s forwards';
-        _board.style.zIndex = 999;
+    function updateScreen() {
+      //Shuffle the "txt" array
+      txt.push(txt.shift());
+      //Rebuild document fragment
+      txt.forEach(function (e) {
+        var p = document.createElement("p");
+        p.className = 'hackerText'
+        p.textContent = e;
+        docfrag.appendChild(p);
+      });
+      //Clear DOM body
+      while (console.firstChild) {
+        console.removeChild(console.firstChild);
+      }
+      console.appendChild(docfrag);
     }
 
-    // hide board
-    function hideBoard() {
-        //_board.style.animationDelay = '1s';
-        _board.style.animation = 'fadeOut 1s forwards';
-        _board.style.zIndex = 0;
-    }
+    setTimeout(() => {
+      msg.style.background = "limegreen";
+      msg.innerHTML = "ACCESS GRANTED";
+      msg.style.boxShadow = "0 0 30px limegreen";
+      console.style.display = "none";
+    }, 5000);
 
-    // game start
-    function startGame(playerOne, playerTwo) {
-        console.log
-        Player1 = playerOne[0]? Player(playerOne[0], playerOne[1]): Bot(playerOne[0], playerOne[1])
-        Player2 = playerTwo[0]? Player(playerTwo[0], playerTwo[1]): Bot(playerTwo[0], playerTwo[1])
-        _scores.children[0].innerHTML = `${Player1['playerNumber']} ${Player1['isHuman']} ${Player1['symbol']}`
-        _scores.children[2].innerHTML = `${Player2['playerNumber']} ${Player2['isHuman']} ${Player2['symbol']}`
-        console.log(Player1)
-        console.log(Player2)
-        //while turn move is less than 10:
-        // get the turn move i.e. move 1. if odd, player1 goes.
-        // on turn move, on button click, add symbol to button. make button unclickable after
-        // check wins, if none:
-        // iterate turn move
-    }
+    setTimeout(() => {
+      msg.style.animation = 'fadeOut 0.5s forwards';
+    }, 6000);
 
-    function getPlayerTurn(move) {
-        // determine if theres a bot and what player
-        if(move % 2){
-            _scores.children[1].innerHTML = "Player Two's Turn"
-            if(!Player2.isHuman) {return Player2.getMove(0, boardArray)}
-            else{return 2}
-        }
-        _scores.children[1].innerHTML = "Player One's Turn"
-        if(!Player1.isHuman){return Player1.getMove(0, boardArray)}
-        else {return 1}
-    };
+    setTimeout(() => {
+      msg.remove()
+      console.remove()
+    }, 8000);
+    // setTimeout(() => {
+    //   renderStart()
+    // }, 9000);
+    // renderStart()
+  }
+  
+  const start = () => {
+    loadStart()
+    setTimeout(() => {
+      renderStart()
+    }, 8000);
+    // waitForTime(8000, renderStart)
+  }
+  // Initial render
+  start()
+  // renderStart()
+}
 
-    function toggleButtonClickability(butt) {
-        return butt.classList.contains('disabled')?  butt.classList: butt.classList.toggle('disabled');
-    };
-
-    function updateBoard(move, index, boardArray) {
-        // take the player move and add to the stored array
-        // check if theres a win
-        if(move % 2){
-            boardArray[index] = 'O';
-            return {symbol: 'O',
-                    boardArray: boardArray}}
-        else {
-            boardArray[index] = 'X';
-            return {symbol: 'X',
-                    boardArray: boardArray}}
-    };
-
-    function getAllIndexes(arr, val) {
-        var indexes = [], i = -1;
-        while ((i = arr.indexOf(val, i+1)) != -1){
-            indexes.push(i);
-        }
-        return indexes;
-    }
-
-    function checkEnd(board, counter, boardFlag) {
-        let moves = getAllIndexes(board, boardFlag);
-
-        // easy win method: check if indices are in win index conditions
-        let across1 = [0,1,2]
-        let across2 = [3,4,5]
-        let across3 = [6,7,8]
-
-        let down1 = [0,3,6]
-        let down2 = [1,4,7]
-        let down3 = [2,5,8]
-
-        let diagnal1 = [0,4,8]
-        let diagnal2 = [2,4,6]
-        let permutations = [across1, across2, across3, down1, down2, down3, diagnal1, diagnal2]
-
-        for(let i = 0; i<permutations.length; i++){
-            let result = permutations[i].every(j => moves.includes(j));
-            if(result){
-                isWin(boardFlag)
-                return {moveCount: moveCount,
-                    outcome: true}
-            }
-        }
-      
-        // programatic for game of any size: in prgoress
-        // for(f){
-        // // let winCount = [1,1,1,1]
-        // // // let downCount = 1;
-        // // // let diagnalCount = 1;
-        // // // let reverseDiagnalCount = 1;
-        // // let n = 3;
-        // // // no matter board size, winning permutations will always be following:
-        // // //  across will always be +1
-        // // //  down will always be +n
-        // // //  diagnol will always be +(n+1)
-        // // let restOfMoves = [];
-        // // let difference = 0;
-
-        // // // across
-        // // for(let i=1; i<moves.length; i++) {
-        // //     restOfMoves = moves.slice(i-1)
-
-        // //     for(j=0; j<restOfMoves.length; j++){
-        // //         difference = restOfMoves[j] - moves[i];
-        // //         console.log(difference)
-        // //         if(difference == 1){
-        // //             winCount[0] += 1;
-        // //             console.log('+1 across')
-        // //             if(restOfMoves.indexOf(j+1) !== -1){
-        // //                 isWin(boardFlag)
-        // //                 return {moveCount: moveCount,
-        // //                     outcome: true,
-        // //                     winCount: winCount}
-        // //             }
-        // //         }
-        // //         else if(difference == n){
-        // //             winCount[1] += 1;
-        // //             console.log('+1 down')
-        // //             if(restOfMoves.indexOf(j+n) !== -1){
-        // //                 isWin(boardFlag)
-        // //                 return {moveCount: moveCount,
-        // //                     outcome: true,
-        // //                     winCount: winCount}
-        // //             }
-        // //         }
-        // //         else if(difference == n+1){
-        // //             winCount[2] += 1;
-        // //             console.log('+1 diagnal')
-        // //             if(restOfMoves.indexOf(j+n+1) !== -1){
-        // //                 isWin(boardFlag)
-        // //                 return {moveCount: moveCount,
-        // //                     outcome: true,
-        // //                     winCount: winCount}
-        // //             }
-        // //         }
-        // //         else if(difference == n-1){
-        // //             winCount[3] += 1;
-        // //             console.log('+1 reverse diagnal')
-        // //             if(restOfMoves.indexOf(j+n-1) !== -1){
-        // //                 isWin(boardFlag)
-        // //                 return {moveCount: moveCount,
-        // //                     outcome: true,
-        // //                     winCount: winCount}
-        // //             }
-        // //         }
-        //         // if (winCount.indexOf(3) !== -1){
-        //         // // winCount=[1,1,1,1]
-        //         //     isWin(boardFlag)
-        //         //     console.log(`${boardFlag}`)
-        //         //     return {moveCount: moveCount,
-        //         //         outcome: true,
-        //         //         winCount: winCount}
-        //         // };
-
-        // // down
-        // // for(let i=0; i<moves.length; i++){
-        // //     if(moves[i+1]-moves[i] == n){
-        // //         rowCount++
-        // //         console.log(rowCount)
-        // //         if (rowCount == n){
-        // //             moveCount=1
-        // //             isWin(boardFlag)
-        // //             console.log(`${boardFlag} down`)
-        // //             return {moveCount: moveCount,
-        // //                 outcome: true}
-        // //         }
-        // //     }
-        // //     else{
-        // //         rowCount=1;
-        // //     };
-        // // }; 
-        // // // diagnal
-        // // for(let i=0; i<moves.length; i++){
-        // //     if(moves[i+1]-moves[i] == n+1){
-        // //         rowCount++
-        // //         console.log(rowCount)
-        // //         if (rowCount == n){
-        // //             moveCount=1
-        // //             isWin(boardFlag)
-        // //             console.log(`${boardFlag} diagnal`)
-        // //             return {moveCount: moveCount,
-        // //                 outcome: true}
-        // //         }
-        // //     }
-        // //     else{
-        // //         rowCount=1;
-        // //     };
-        // // };
-
-        // // // reverse diagnal
-        // // for(let i=0; i<moves.length; i++){
-        // //     if(moves[i+1]-moves[i] == n-1){
-        // //         rowCount++
-        // //         console.log(rowCount)
-        // //         if (rowCount == n){
-        // //             moveCount=1
-        // //             isWin(boardFlag)
-        // //             console.log(`${boardFlag} diagnal`)
-        // //             return {moveCount: moveCount,
-        // //                 outcome: true}
-        // //         }
-        // //     }
-        // //     else{
-        // //         rowCount=1;
-        // //     };
-        // // };
-        // }
-
-        if(counter == 9){
-            moveCount=1
-            isDraw()
-            return {moveCount: moveCount,
-                    outcome: true}
-        }
-        else{
-           // winCount = [1,1,1,1];
-            return {moveCount: moveCount++,
-                     outcome: false}
-        }
-    };
-
-    function resetBoard() {
-        _scores.children[1].innerHTML = "Player One's Turn"
-        _space.forEach(butt => {
-            butt.innerHTML = '';
-            butt.classList = 'board-square';
-            });
-        boardArray = [0,0,0,
-                    0,0,0,
-                    0,0,0]
-        return {boardArray: boardArray}
-    };
-
-    function isWin(player) {
-        //show winner page or loser page depnding on player number
-        console.log('Winner!')
-        let outcome = `${player} Wins!`
-        Results.displayResultMessage(outcome)
-        return moveCount = 1;
-    }
-
-    function isDraw() {
-        //show draw page
-        console.log('Draw')
-        let outcome = "It's a Draw!"
-        Results.displayResultMessage(outcome)
-        return moveCount = 1;
-    }
-
-    //for each button get click event
-    _space.forEach((space, index) => {
-        space.addEventListener('click', (e) => {       
-            boardChanges = updateBoard(getPlayerTurn(moveCount), index, boardArray);
-            e.target.innerHTML = boardChanges.symbol;
-            e.target = toggleButtonClickability(e.target);
-            console.log(boardArray)
-            checkEnd(boardArray, moveCount, boardChanges.symbol)        
-        });
-    });
-
-
-
-    return {
-        initializeBoard: initializeBoard,
-        hideBoard: hideBoard,
-        startGame: startGame,
-        resetBoard: resetBoard,
-        Player1: Player1,
-        Player2: Player2,
-        count: moveCount,
-        boardArray: boardArray   
-    }
-})();
-
-const Results = (() => {
-    const resultDOM = document.querySelector('#result');
-    const winLose = document.getElementById('win-or-lose');
-    const newGame = document.getElementById('new-game');
-    const newPlayers = document.getElementById('new-players');
-
-    newPlayers.addEventListener('click', () => {
-        startNewGameWithNewPlayers();
-        PlayerSelection.showPlayerSelection();
-    });
-
-    newGame.addEventListener('click', () => {
-        startNewGame();
-    });
-
-    // functions
-    function displayResultMessage(outcome) {
-     //   resultDOM.style.animationDelay = '1s';
-        winLose.children[0].innerHTML = outcome;
-        resultDOM.style.animation = 'fadeInHalf 1s forwards';
-        resultDOM.style.zIndex = 999;
-    }
-
-    // hide message
-    function hideResultMessage() {
-        //resultDOM.style.animationDelay = '1s';
-        resultDOM.style.animation = 'fadeOut 1s forwards';
-        resultDOM.style.zIndex = 0;
-    }
-    
-    function startNewGameWithNewPlayers() {
-        Board.hideBoard();
-        Board.resetBoard();
-        hideResultMessage();
-        PlayerSelection.showPlayerSelection();
-    }
-
-    function startNewGame() {
-        Board.resetBoard();
-        hideResultMessage();
-    }
-
-    function getNewPlayers() {
-        // toggle player selection display to visible
-        // toggle board display to hidden
-
-        // reset Player Objects
-    }
-
-    return {
-        displayResultMessage: displayResultMessage
-    }
-})();
-
-const Score = (() => {
-    let _scoreboard = document.getElementById('score');
-    let _player1 = document.getElementById('player1-score');
-    let _player2 = document.getElementById('player2-score');
-    
-    function updateScore() {
-        //if there is a win
-        // update score of appropriate player
-    }
-
-})();
+ScreenController();
